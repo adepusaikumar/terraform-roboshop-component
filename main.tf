@@ -1,3 +1,4 @@
+# 1. Create an EC2 instance and install the application on it using a bootstrap script.
 resource "aws_instance" "main" {
   ami = local.ami_id
   instance_type = "t3.micro"
@@ -11,6 +12,7 @@ resource "aws_instance" "main" {
   )
 }
 
+# 2. Create an AMI from the EC2 instance created above.
 resource "terraform_data" "main" {
   triggers_replace = [
     aws_instance.main.id
@@ -36,12 +38,14 @@ resource "terraform_data" "main" {
   }
 }
 
+# 3. Stop the EC2 instance before creating an AMI from it.
 resource "aws_ec2_instance_state" "main" {
   instance_id = aws_instance.main.id
   state       = "stopped"
   depends_on = [ terraform_data.main ]
 }
 
+# 4. Create an AMI from the stopped EC2 instance. 
 resource "aws_ami_from_instance" "main" {
   name = "${var.project}-${var.environment}-${var.component}-${var.app_version}-${aws_instance.main.id}"
   source_instance_id = aws_instance.main.id
@@ -54,6 +58,7 @@ resource "aws_ami_from_instance" "main" {
   )
 }
 
+# 5. Create a launch template using the AMI created above. This launch template will be used by the autoscaling group to create instances.
 resource "aws_launch_template" "main" {
   name        = "${var.project}-${var.environment}-${var.component}"
   image_id = aws_ami_from_instance.main.id
@@ -92,6 +97,7 @@ resource "aws_launch_template" "main" {
   }
 }
 
+# 6. Create a target group for the application. This target group will be used by the load balancer to route traffic to the instances created by the autoscaling group.
 resource "aws_lb_target_group" "main" {
   name        = "${var.project}-${var.environment}-${var.component}"
   port        = local.port_number
@@ -112,23 +118,7 @@ resource "aws_lb_target_group" "main" {
   }
 }
 
-# This depends on target group
-resource "aws_lb_listener_rule" "main" {
-  listener_arn = local.alb_listener_arn
-  priority     = var.rule_priority
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.main.arn
-  }
-
-  condition {
-    host_header {
-      values = [local.host_header]
-    }
-  }
-}
-
+# 7. Create an autoscaling group that uses the launch template created above to create instances.
 resource "aws_autoscaling_group" "main" {
   name                      = "${var.project}-${var.environment}-${var.component}"
   max_size                  = 5
@@ -176,6 +166,7 @@ resource "aws_autoscaling_group" "main" {
   }
 }
 
+# 8. Create an Auto Scaling policy to scale the application based on average CPU utilization.
 # Auto Scaling policy to scale based on average CPU utilization
 resource "aws_autoscaling_policy" "main" {
   autoscaling_group_name = aws_autoscaling_group.main.name
@@ -192,13 +183,32 @@ resource "aws_autoscaling_policy" "main" {
   }
 }
 
+# 9. Create a listener rule for the application. This listener rule will be used by the load balancer to route traffic to the target group created above.
+# This depends on target group
+resource "aws_lb_listener_rule" "main" {
+  listener_arn = local.alb_listener_arn
+  priority     = var.rule_priority
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.main.arn
+  }
+
+  condition {
+    host_header {
+      values = [local.host_header]
+    }
+  }
+}
+
+# 10. Delete the instance
 resource "terraform_data" "main-delete" {
   triggers_replace = [aws_instance.main.id]
 
   depends_on = [ aws_autoscaling_policy.main ]
 
   provisioner "local-exec" {
-  command = "aws ec2 terminate-instances ${aws_instance.main.id}"
+  command = "aws ec2 terminate-instances --instance-ids ${aws_instance.main.id}"
   }
 
 }
