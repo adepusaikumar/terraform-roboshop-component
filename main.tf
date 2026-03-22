@@ -185,6 +185,7 @@ resource "aws_autoscaling_policy" "main" {
 
 # 9. Create a listener rule for the application. This listener rule will be used by the load balancer to route traffic to the target group created above.
 # This depends on target group
+# if frontend frontend-dev.rajudevops.online
 resource "aws_lb_listener_rule" "main" {
   listener_arn = local.alb_listener_arn
   priority     = var.rule_priority
