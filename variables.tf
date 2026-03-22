@@ -19,7 +19,12 @@ variable "component" {
 }
 
 variable "app_version" {
+  type = string
   default = "v3"
+}
+
+variable "rule_priority" {
+    
 }
 
 

@@ -1,8 +1,8 @@
 resource "aws_instance" "main" {
   ami = local.ami_id
   instance_type = "t3.micro"
-  vpc_security_group_ids = [local.sg_id]
   subnet_id = local.private_subnet_id
+  vpc_security_group_ids = [local.sg_id]
   tags = merge(
     local.common_tags,
     {
@@ -36,7 +36,7 @@ resource "terraform_data" "main" {
   }
 }
 
-resource "aws_ec2_instance_state" "catalogue" {
+resource "aws_ec2_instance_state" "main" {
   instance_id = aws_instance.main.id
   state       = "stopped"
   depends_on = [ terraform_data.main ]
@@ -94,26 +94,28 @@ resource "aws_launch_template" "main" {
 
 resource "aws_lb_target_group" "main" {
   name        = "${var.project}-${var.environment}-${var.component}"
-  port        = 8080
+  port        = local.port_number
   protocol    = "HTTP"
   vpc_id      = local.vpc_id
+  deregistration_delay = 60
 
   health_check {
     enabled = true
     healthy_threshold = 2
     unhealthy_threshold = 3
     interval = 10
-    path = "/health"
-    matcher = "200-299"
     timeout = 2
     protocol = "HTTP"
+    path = local.health_check_path
+    port = local.port_number
+    matcher = "200-299"
   }
 }
 
 # This depends on target group
 resource "aws_lb_listener_rule" "main" {
-  listener_arn = local.backend_alb_listener_arn
-  priority     = 10
+  listener_arn = local.alb_listener_arn
+  priority     = var.rule_priority
 
   action {
     type             = "forward"
@@ -122,7 +124,7 @@ resource "aws_lb_listener_rule" "main" {
 
   condition {
     host_header {
-      values = ["${var.component}.backend-alb-${var.environment}.${var.domain_name}"]
+      values = [local.host_header]
     }
   }
 }
@@ -179,7 +181,7 @@ resource "aws_autoscaling_policy" "main" {
   autoscaling_group_name = aws_autoscaling_group.main.name
   name                   = "${var.project}-${var.environment}-${var.component}"
   policy_type            = "TargetTrackingScaling"
-
+  estimated_instance_warmup = 120
   
   target_tracking_configuration {
     predefined_metric_specification {
